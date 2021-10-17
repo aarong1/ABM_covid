@@ -1,0 +1,14 @@
+{
+  "covasim": {
+    "version": "3.0.7",
+    "branch": "Branch N/A",
+    "hash": "Hash N/A",
+    "date": "Date N/A"
+  },
+  "called_by": {
+    "branch": "master",
+    "hash": "2c79bef",
+    "date": "2021-06-14 19:16:48 UTC",
+    "filename": "/Users/aarongorman/Documents/covasim_old_code/uk_track_trace_covasim.py"
+  }
+}

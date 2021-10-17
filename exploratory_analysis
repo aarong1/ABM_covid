@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Oct 13 13:49:54 2021
+
+@author: aarongorman
+
+"""
+
+import os
+os.getcwd()
+import datetime as dt
+import covasim as cv
+import numpy as np
+import pylab as plt
+#%%
+
+todays_date = dt.datetime.today()
+init_date = dt.datetime.today() - dt.timedelta(days=100)
+start_day = str((todays_date-dt.timedelta(days=50)).date())
+
+#%%
+
+# Run options
+do_plot = 1
+do_show = 1
+verbose = 1
+
+#%%
+#Run simple scenarios ------
+['pop_size', 'pop_infected', 'pop_type', 'location', 'start_day', 'end_day', 'n_days', 
+ 'rand_seed', 'verbose', 'pop_scale', 'scaled_pop', 'rescale', 'rescale_threshold', 
+ 'rescale_factor', 'frac_susceptible', 'contacts', 'dynam_layer', 'beta_layer', 
+ 'beta_dist', 'viral_dist', 'beta', 'asymp_factor', 'n_imports', 'n_variants', 
+ 'use_waning', 'nab_init', 'nab_decay', 'nab_kin', 'nab_boost', 'nab_eff', 
+ 'rel_imm_symp', 'immunity', 'rel_beta', 'rel_imm_variant', 'dur', 
+ 'rel_symp_prob', 'rel_severe_prob', 'rel_crit_prob', 'rel_death_prob',
+ 'prog_by_age', 'prognoses', 'iso_factor', 'quar_factor', 'quar_period',
+ 'interventions', 'analyzers', 'timelimit', 'stopping_func', 'n_beds_hosp', 
+ 'n_beds_icu', 'no_hosp_factor', 'no_icu_factor', 'vaccine_pars', 'vaccine_map',
+ 'variants', 'variant_map', 'variant_pars']
+
+
+#%%
+#initialise simulation with meta parameters
+sim = cv.Sim(start_day=init_date)
+sim.run()
+sim.plot()
+
+
+
+
+#%%
+#define multisim for more advanced outcomes
+
+
+
+sim = cv.Sim()
+sim.initialize()
+msim = cv.MultiSim(sim)
+msim.run(n_runs=5,start_day=init_date)
+msim.plot()
+msim.mean()
+msim.plot()
+
+
+
+
+#%%
+#sweeping over parameters --------
+
+betas = np.linspace(0.010, 0.020, 5) # Sweep beta from 0.01 to 0.02 with 5 values
+sims = []
+
+
+for beta in betas:
+    sim = cv.Sim(beta=beta, label=f'Beta = {beta}')
+    sims.append(sim)
+    
+msim = cv.MultiSim(sims)
+msim.run()
+msim.plot_result('cum_infections')
+
+
+#Custim interventions ----------------
+#%%
+def protect_elderly(sim):
+    if sim.t == sim.day('2021-04-01'):
+        elderly = sim.people.age>70
+        sim.people.rel_sus[elderly] = 0.0
+
+#%%
+pars = {'start_day':'2021-03-01', 'n_days':120}
+
+s1 = cv.Sim(pars, label='Default')
+
+s2 = cv.Sim(pars, label='Protect the elderly', interventions=protect_elderly)
+
+cv.MultiSim([s1, s2]).run().plot(to_plot=['cum_deaths', 'cum_infections'])
+
+
+
+#%%
+
+
+#  Nested multisim--------------
+
+#Finally, you can also merge or split different multisims together. 
+#Here’s an example that’s similar to before, except it shows how to run 
+#...a multisim of different seeds for the same beta value, but then merge 
+#multisims for different beta values together into one multisim.
+
+n_sims = 3
+betas = [0.012, 0.016, 0.018]
+
+msims = []
+for beta in betas:
+    sims = []
+    for s in range(n_sims):
+        sim = cv.Sim(pop_size=10e3, beta=beta, rand_seed=s, label=f'Beta = {beta}')
+        sims.append(sim)
+    msim = cv.MultiSim(sims)
+    msim.run()
+    msim.mean()
+    msims.append(msim)
+#%%
+merged = cv.MultiSim.merge(msims, base=True)
+merged.plot(color_by_sim=True)
+
+
+
+
+
+
+
+
+
+
+#%%
+#Run multiple scenarios easily-------
+
+# Define the actual scenarios
+
+scenarios = {'baseline': {
+              'name':'Baseline',
+              'pars': {
+                  'interventions': None,
+                  }
+              },
+            'distance': {
+              'name':'Social distancing',
+              'pars': {
+                  'interventions': cv.change_beta(days=start_day, changes=0.7)
+                  }
+              },
+            'ttq': {
+              'name':'Test-trace-quarantine',
+              'pars': {
+                  'interventions': [
+                        cv.test_prob(start_day=start_day, symp_prob=0.2, asymp_prob=0.05, test_delay=1.0),
+                        cv.contact_tracing(start_day=start_day, trace_probs=0.8, trace_time=1.0),
+                    ]
+                  }
+              },
+             }
+
+
+# Run the scenarios -- this block is required for parallel processing on Windows
+#if __name__ == "__main__":
+# Scenario metaparameters 
+metapars = dict(
+    n_runs    = 6, # Number of parallel runs; change to 3 for quick, 11 for real
+    noise     = 0.1, # Use noise, optionally
+    noisepar  = 'beta',
+    rand_seed = 1,
+    quantiles = {'low':0.3, 'high':0.7}
+ )
+    
+basepars = dict(
+  pop_size = 2000,
+  #pop_infected=2,
+  verbose = verbose,
+  start_day = init_date,
+  end_day = todays_date,
+)
+
+scens = cv.Scenarios(basepars=basepars, 
+                     metapars=metapars, 
+                     scenarios=scenarios,
+                     label='scenarios')
+
+scens.run(verbose=1)
+
+#if do_plot:
+fig1 = scens.plot(do_show=do_show)
+
+
+#%% Outputs
+#if_excel_output:
+    #scens.to_excel('model_output')
+scens.results # all results - look at excel output for
+#no date for scenario objects 
+#is array - .values() method for values  
+#oops maybe not
+#e.g. scens.results.new_infections.baseline.best
+scens.plot() # plot model graph summary
+scens.disp() # display model specification
+scens.summarize() #summarise all runs of the model
+    
+scens.plot(to_plot=['new_infections', 'cum_infections'])
+#plot specific attributes
+
+scens.plot(to_plot='overview', fig_args=dict(figsize=(30,15)))
+#plot all in mosaic
+
+#Run scenarios using multisim
+
+
+
+
+
